@@ -65,6 +65,9 @@ transfers(numtransfers) = struct(           ...
 
 transferIndex = 1;
 
+individualPowerPlot = figure('visible', 'off');
+% individualPowerPlot = figure;
+combinedPowerPlot = figure;
 
 for ii=1:numlines
 
@@ -148,6 +151,7 @@ for ii=1:numlines
         transfer.rxTime = transfer.transferTime - transfer.txTime;
         
         % powerPlot
+        figure(combinedPowerPlot)
         power = transfer.power(:,2);
         times = transfer.power(:,1);
         subplot(ceil(sqrt(numtransfers)), ceil(sqrt(numtransfers)), transferIndex)
@@ -156,6 +160,14 @@ for ii=1:numlines
         xlabel('Time (sec)');
         ylabel('Power (mW)');
         grid on
+        
+        figure(individualPowerPlot)
+        plot(times, power);
+        title([transfer.filename ' ' num2str(transferIndex)]);
+        xlabel('Time (sec)');
+        ylabel('Power (mW)');
+        grid on
+        saveas(individualPowerPlot, [filename '_' transfer.filename '_' num2str(transferIndex) '.fig'])
         
         
         % error rate
