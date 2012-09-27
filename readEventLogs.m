@@ -284,6 +284,7 @@ for fileIndex=1:length(extractedFiles)
     end
     
     saveas(combinedPowerPlot, [filename '_plot.fig'])
+    saveas(combinedPowerPlot, [filename '_plot.png'])
 end
 
 for ii=1:size(fieldnames(average127),1)
