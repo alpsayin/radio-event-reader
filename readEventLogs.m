@@ -1,4 +1,4 @@
-function [transfers, average]= readEventLogs(logfile)
+function [transfers, average127, average2k]= readEventLogs(logfile)
 %
 % function readEventLogs(logfile)
 %
@@ -6,6 +6,14 @@ function [transfers, average]= readEventLogs(logfile)
 %
 % author : alpsayin
 % 19.09.2012
+% 
+% for location=0:7
+% [uhx1{location+1} uhx1_average127{location+1} uhx1_average2k{location+1}] = readEventLogs(['/Users/alpsayin/Documents/MATLAB/data/7Jul2012_GamlaStan_144MhzExperiments/radiotftp/uhx1/MobileStation/radiotftp_vhf-event.log.' 48+location])
+% end
+%
+% for location=[0 1 2 4]
+% [bim2a{location+1} bim2a_average127{location+1} bim2a_average2k{location+1}] = readEventLogs(['/Users/alpsayin/Documents/MATLAB/data/8Jul2012_GamlaStan_434MhzExperiments/radiotftp/bim2a/MobileStation/radiotftp_uhf-event.log.' 48+location])
+% end
 %
 
 PAYLOAD_SIZE = 144;
@@ -16,6 +24,7 @@ BIM2A_RX_POWER = 17e-3*3;
 
 javaclasspath('./');
 import DataExtractor
+fprintf(['Reading file ' logfile '!\n']);
 extractedFiles = DataExtractor.extract(logfile);
 
 if( ~isempty(strfind(logfile, 'vhf')) )
@@ -25,8 +34,8 @@ elseif( ~isempty(strfind(logfile, 'uhf')) )
     tx_power = BIM2A_TX_POWER;
     rx_power = BIM2A_RX_POWER;
 end
-
-average = struct(                               ...
+numTransfers127 = 0;
+average127 = struct(                           ...
         'transferTime', 0,                      ...
         'bitrate', 0,                           ...
         'throughput', 0,                        ...
@@ -40,6 +49,23 @@ average = struct(                               ...
         'successRate', 0,                       ...
         'energy', 0                             ...
         );
+    
+numTransfers2k = 0;
+average2k = struct(                           ...
+        'transferTime', 0,                      ...
+        'bitrate', 0,                           ...
+        'throughput', 0,                        ...
+        'numOfIdealTx', 0,                      ...
+        'numOfTx', 0,                           ...
+        'numOfRx', 0,                           ...
+        'numOfRetransmit', 0,                   ...
+        'txTime', 0,                            ...
+        'rxTime', 0,                            ...
+        'errorRate', 0,                         ...
+        'successRate', 0,                       ...
+        'energy', 0                             ...
+        );
+    
     
 for fileIndex=1:length(extractedFiles)
     filename = char(extractedFiles(fileIndex));
@@ -96,10 +122,17 @@ for fileIndex=1:length(extractedFiles)
 
         event = fgetl(fid);
         if(strncmp(event, '[put->',6))
+        try
             transfer = transfers(transferIndex);
             transfer.filename = event(7:end-1);
             transfer.times =  time ;
             transfer.events =  PUT ;
+        catch
+            transferIndex
+            length(transfers)
+            event
+            fprintf('time=%15f\n',time)
+        end
 
         elseif(strcmp(event, '[TX->enabled]'))
             transfer.times = [transfer.times ; time];
@@ -120,27 +153,25 @@ for fileIndex=1:length(extractedFiles)
             % transfer time
             transfer.transferTime = transfer.times(end) - transfer.times(1);
             transfer.times = transfer.times - transfer.times(1);
-            average.transferTime = average.transferTime + transfer.transferTime;
 
             % file size
             if(strcmp(transfer.filename, 'text127.txt'))
                 transfer.fileSize = 127;
+                numTransfers127 = numTransfers127 + 1;
             elseif(strcmp(transfer.filename, 'text2k.txt'))
                 transfer.fileSize = 2048;
+                numTransfers2k = numTransfers2k + 1;
             end
 
             % bitrate
             transfer.bitrate = transfer.fileSize/transfer.transferTime;
-            average.bitrate = average.bitrate + transfer.bitrate;
             
             % throughput
             transfer.throughput = 1/transfer.bitrate;
-            average.throughput = average.throughput + transfer.throughput;
 
             % ideal number of transmissions
-            transfer.numOfIdealTx = 1 + ceil(transfer.fileSize/PAYLOAD_SIZE);
-            average.numOfIdealTx = average.numOfIdealTx + transfer.numOfIdealTx;
-
+            transfer.numOfIdealTx = 1 + ceil((transfer.fileSize+0.1)/PAYLOAD_SIZE);
+            
             % numOfTx, numOfRx, numOfRetransmit, txTime, rxTime,
             % power
             transfer.numOfTx = 0;
@@ -171,12 +202,6 @@ for fileIndex=1:length(extractedFiles)
 
             end
             transfer.rxTime = transfer.transferTime - transfer.txTime;
-
-            average.numOfTx = average.numOfTx + transfer.numOfTx;
-            average.numOfRx = average.numOfRx + transfer.numOfRx;
-            average.numOfRetransmit = average.numOfRetransmit + transfer.numOfRetransmit;
-            average.txTime = average.txTime + transfer.txTime;
-            average.rxTime = average.rxTime + transfer.rxTime;
             
             % powerPlot
             figure(combinedPowerPlot)
@@ -212,15 +237,40 @@ for fileIndex=1:length(extractedFiles)
 
             % error rate
             transfer.errorRate = transfer.numOfRetransmit/transfer.numOfTx;
-            average.errorRate = average.errorRate + transfer.errorRate;
-
             % success rate
             transfer.successRate = transfer.numOfIdealTx/transfer.numOfTx;
-            average.successRate = average.successRate + transfer.successRate;
             
             % energy consumption
             transfer.energy = transfer.txTime*tx_power + transfer.rxTime*rx_power;
-            average.enerygy = average.energy + transfer.energy;
+            
+            % compute averages
+            if transfer.fileSize == 127
+                average127.transferTime = average127.transferTime + transfer.transferTime;
+                average127.bitrate = average127.bitrate + transfer.bitrate;
+                average127.throughput = average127.throughput + transfer.throughput;
+                average127.numOfIdealTx = average127.numOfIdealTx + transfer.numOfIdealTx;
+                average127.numOfTx = average127.numOfTx + transfer.numOfTx;
+                average127.numOfRx = average127.numOfRx + transfer.numOfRx;
+                average127.numOfRetransmit = average127.numOfRetransmit + transfer.numOfRetransmit;
+                average127.txTime = average127.txTime + transfer.txTime;
+                average127.rxTime = average127.rxTime + transfer.rxTime;
+                average127.errorRate = average127.errorRate + transfer.errorRate;
+                average127.successRate = average127.successRate + transfer.successRate;
+                average127.energy = average127.energy + transfer.energy;
+            elseif transfer.fileSize == 2048
+                average2k.transferTime = average2k.transferTime + transfer.transferTime;
+                average2k.bitrate = average2k.bitrate + transfer.bitrate;
+                average2k.throughput = average2k.throughput + transfer.throughput;
+                average2k.numOfIdealTx = average2k.numOfIdealTx + transfer.numOfIdealTx;
+                average2k.numOfTx = average2k.numOfTx + transfer.numOfTx;
+                average2k.numOfRx = average2k.numOfRx + transfer.numOfRx;
+                average2k.numOfRetransmit = average2k.numOfRetransmit + transfer.numOfRetransmit;
+                average2k.txTime = average2k.txTime + transfer.txTime;
+                average2k.rxTime = average2k.rxTime + transfer.rxTime;
+                average2k.errorRate = average2k.errorRate + transfer.errorRate;
+                average2k.successRate = average2k.successRate + transfer.successRate;
+                average2k.energy = average2k.energy + transfer.energy;
+            end
             
             % store the parsed transfer log
             transfers(transferIndex) = transfer;
@@ -236,11 +286,18 @@ for fileIndex=1:length(extractedFiles)
     saveas(combinedPowerPlot, [filename '_plot.fig'])
 end
 
-for ii=1:size(fieldnames(average),1)
-    average_fieldnames = fieldnames(average);
+for ii=1:size(fieldnames(average127),1)
+    average_fieldnames = fieldnames(average127);
     fieldname = average_fieldnames{ii};
-    oldValue = GETFIELD(average, fieldname);
-    average = SETFIELD(average, fieldname, oldValue/numtransfers);
+    oldValue = GETFIELD(average127, fieldname);
+    average127 = SETFIELD(average127, fieldname, oldValue/numTransfers127);
+end
+
+for ii=1:size(fieldnames(average2k),1)
+    average_fieldnames = fieldnames(average2k);
+    fieldname = average_fieldnames{ii};
+    oldValue = GETFIELD(average2k, fieldname);
+    average2k = SETFIELD(average2k, fieldname, oldValue/numTransfers2k);
 end
 
 
