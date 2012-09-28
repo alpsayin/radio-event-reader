@@ -16,11 +16,18 @@ function [transfers, average127, average2k]= readEventLogs(logfile)
 % end
 %
 
+% CONSTANTS
 PAYLOAD_SIZE = 144;
 UHX1_TX_POWER = 55e-3*5 + 20e-3*5;
 UHX1_RX_POWER = 24e-3*5;
 BIM2A_TX_POWER = 14e-3*3 + 17e-3*3;
 BIM2A_RX_POWER = 17e-3*3;
+
+TX_ENABLED=2;
+RX_ENABLED=3;
+EXIT=5;
+RETRANSMIT=4;
+PUT=1;
 
 javaclasspath('./');
 import DataExtractor
@@ -34,6 +41,7 @@ elseif( ~isempty(strfind(logfile, 'uhf')) )
     tx_power = BIM2A_TX_POWER;
     rx_power = BIM2A_RX_POWER;
 end
+
 numTransfers127 = 0;
 average127 = struct(                           ...
         'transferTime', 0,                      ...
@@ -47,7 +55,9 @@ average127 = struct(                           ...
         'rxTime', 0,                            ...
         'errorRate', 0,                         ...
         'successRate', 0,                       ...
-        'energy', 0                             ...
+        'energy', 0,                             ...
+        'numTransfers', 0,                       ...
+        'numDisconnected', 0                    ...
         );
     
 numTransfers2k = 0;
@@ -63,7 +73,9 @@ average2k = struct(                           ...
         'rxTime', 0,                            ...
         'errorRate', 0,                         ...
         'successRate', 0,                       ...
-        'energy', 0                             ...
+        'energy', 0,                            ...
+        'numTransfers', 0,                       ...
+        'numDisconnected', 0                    ...
         );
     
     
@@ -71,22 +83,21 @@ for fileIndex=1:length(extractedFiles)
     filename = char(extractedFiles(fileIndex));
 
     fid = fopen(filename, 'r');
+    numtransfers = 0;
+    while true
+        [time, count] = fscanf(fid, '%f');
+        if(count==0)
+            break
+        end
 
-    [~, result] = system(['wc -l ', filename]);
-    result = regexp(result, '\d*', 'match');
-    numlines = str2double( result{1} );
-
-    [~, result] = system(['grep put ', filename, ' | wc -l']);
-    result = regexp(result, '\d*', 'match');
-    numtransfers = str2double( result{1} );
-
-    TX_ENABLED=2;
-    RX_ENABLED=3;
-    EXIT=5;
-    RETRANSMIT=4;
-    PUT=1;
-
-
+        event = fgetl(fid);
+        if(strncmp(event, '[put->',6))
+            numtransfers = numtransfers + 1;
+        end
+    end
+    
+    fseek(fid, 0, 'bof');
+    
     transfers(numtransfers) = struct(           ...
         'filename', [],                         ...
         'times', [],                            ...
@@ -109,12 +120,13 @@ for fileIndex=1:length(extractedFiles)
         );
 
     transferIndex = 1;
+    plotIndex = 1;
 
     individualPowerPlot = figure;
     combinedPowerPlot = figure;
 
-    for ii=1:numlines
-
+    while true
+    
         [time, count] = fscanf(fid, '%f');
         if(count==0)
             break
@@ -203,6 +215,58 @@ for fileIndex=1:length(extractedFiles)
             end
             transfer.rxTime = transfer.transferTime - transfer.txTime;
             
+            if transfer.numOfIdealTx <= transfer.numOfTx
+
+                % error rate
+                transfer.errorRate = transfer.numOfRetransmit/transfer.numOfTx;
+                % success rate
+                transfer.successRate = transfer.numOfIdealTx/transfer.numOfTx;
+
+                % energy consumption
+                transfer.energy = transfer.txTime*tx_power + transfer.rxTime*rx_power;
+
+                % compute averages
+                if transfer.fileSize == 127
+                    average127.transferTime = average127.transferTime + transfer.transferTime;
+                    average127.bitrate = average127.bitrate + transfer.bitrate;
+                    average127.throughput = average127.throughput + transfer.throughput;
+                    average127.numOfIdealTx = average127.numOfIdealTx + transfer.numOfIdealTx;
+                    average127.numOfTx = average127.numOfTx + transfer.numOfTx;
+                    average127.numOfRx = average127.numOfRx + transfer.numOfRx;
+                    average127.numOfRetransmit = average127.numOfRetransmit + transfer.numOfRetransmit;
+                    average127.txTime = average127.txTime + transfer.txTime;
+                    average127.rxTime = average127.rxTime + transfer.rxTime;
+                    average127.errorRate = average127.errorRate + transfer.errorRate;
+                    average127.successRate = average127.successRate + transfer.successRate;
+                    average127.energy = average127.energy + transfer.energy;
+                elseif transfer.fileSize == 2048
+                    average2k.transferTime = average2k.transferTime + transfer.transferTime;
+                    average2k.bitrate = average2k.bitrate + transfer.bitrate;
+                    average2k.throughput = average2k.throughput + transfer.throughput;
+                    average2k.numOfIdealTx = average2k.numOfIdealTx + transfer.numOfIdealTx;
+                    average2k.numOfTx = average2k.numOfTx + transfer.numOfTx;
+                    average2k.numOfRx = average2k.numOfRx + transfer.numOfRx;
+                    average2k.numOfRetransmit = average2k.numOfRetransmit + transfer.numOfRetransmit;
+                    average2k.txTime = average2k.txTime + transfer.txTime;
+                    average2k.rxTime = average2k.rxTime + transfer.rxTime;
+                    average2k.errorRate = average2k.errorRate + transfer.errorRate;
+                    average2k.successRate = average2k.successRate + transfer.successRate;
+                    average2k.energy = average2k.energy + transfer.energy;
+                end
+
+                % store the parsed transfer log
+                transfers(transferIndex) = transfer;
+                transferIndex = transferIndex + 1;
+            else
+                % increment disconnected
+                if transfer.fileSize == 127
+                    average127.numDisconnected = average127.numDisconnected + 1;
+                elseif transfer.fileSize == 2048
+                    average2k.numDisconnected = average2k.numDisconnected + 1;
+                end
+                              
+            end
+                            
             % powerPlot
             figure(combinedPowerPlot)
             power = transfer.power(:,2);
@@ -212,17 +276,17 @@ for fileIndex=1:length(extractedFiles)
             if(numRows*numCols < numtransfers)
                 numCols = ceil(sqrt(numtransfers));
             end
-            
-            subplot( numRows, numCols, transferIndex)
+
+            subplot( numRows, numCols, plotIndex)
             plot(times, power);
-            title([transfer.filename ' ' num2str(transferIndex)]);
+            title([transfer.filename ' ' num2str(plotIndex)]);
             xlabel('Time (sec)');
             ylabel('Power (mW)');
             grid on
 
             figure(individualPowerPlot)
             plot(times, power);
-            title([transfer.filename ' ' num2str(transferIndex)]);
+            title([transfer.filename ' ' num2str(plotIndex)]);
             xlabel('Time (sec)');
             ylabel('Power (mW)');
             grid on
@@ -232,50 +296,10 @@ for fileIndex=1:length(extractedFiles)
                 mkdir([filename '_plots'])
             end
 
-            saveas(individualPowerPlot, [filename '_plots/' num2str(transferIndex) '.fig'])
+            saveas(individualPowerPlot, [filename '_plots/' num2str(plotIndex) '.fig'])
             close(gcf)
-
-            % error rate
-            transfer.errorRate = transfer.numOfRetransmit/transfer.numOfTx;
-            % success rate
-            transfer.successRate = transfer.numOfIdealTx/transfer.numOfTx;
-            
-            % energy consumption
-            transfer.energy = transfer.txTime*tx_power + transfer.rxTime*rx_power;
-            
-            % compute averages
-            if transfer.fileSize == 127
-                average127.transferTime = average127.transferTime + transfer.transferTime;
-                average127.bitrate = average127.bitrate + transfer.bitrate;
-                average127.throughput = average127.throughput + transfer.throughput;
-                average127.numOfIdealTx = average127.numOfIdealTx + transfer.numOfIdealTx;
-                average127.numOfTx = average127.numOfTx + transfer.numOfTx;
-                average127.numOfRx = average127.numOfRx + transfer.numOfRx;
-                average127.numOfRetransmit = average127.numOfRetransmit + transfer.numOfRetransmit;
-                average127.txTime = average127.txTime + transfer.txTime;
-                average127.rxTime = average127.rxTime + transfer.rxTime;
-                average127.errorRate = average127.errorRate + transfer.errorRate;
-                average127.successRate = average127.successRate + transfer.successRate;
-                average127.energy = average127.energy + transfer.energy;
-            elseif transfer.fileSize == 2048
-                average2k.transferTime = average2k.transferTime + transfer.transferTime;
-                average2k.bitrate = average2k.bitrate + transfer.bitrate;
-                average2k.throughput = average2k.throughput + transfer.throughput;
-                average2k.numOfIdealTx = average2k.numOfIdealTx + transfer.numOfIdealTx;
-                average2k.numOfTx = average2k.numOfTx + transfer.numOfTx;
-                average2k.numOfRx = average2k.numOfRx + transfer.numOfRx;
-                average2k.numOfRetransmit = average2k.numOfRetransmit + transfer.numOfRetransmit;
-                average2k.txTime = average2k.txTime + transfer.txTime;
-                average2k.rxTime = average2k.rxTime + transfer.rxTime;
-                average2k.errorRate = average2k.errorRate + transfer.errorRate;
-                average2k.successRate = average2k.successRate + transfer.successRate;
-                average2k.energy = average2k.energy + transfer.energy;
-            end
-            
-            % store the parsed transfer log
-            transfers(transferIndex) = transfer;
-            transferIndex = transferIndex + 1;
-
+            plotIndex = plotIndex +1;
+                
         else
             fprintf('UNRECOGNIZED EVENT: ')
             fprintf(event)
@@ -287,18 +311,25 @@ for fileIndex=1:length(extractedFiles)
     saveas(combinedPowerPlot, [filename '_plot.png'])
 end
 
+average127.numTransfers = numTransfers127;
 for ii=1:size(fieldnames(average127),1)
     average_fieldnames = fieldnames(average127);
     fieldname = average_fieldnames{ii};
-    oldValue = GETFIELD(average127, fieldname);
-    average127 = SETFIELD(average127, fieldname, oldValue/numTransfers127);
+    if(~strcmp(fieldname, 'numDisconnected') && ~strcmp(fieldname, 'numTransfers'))
+        oldValue = GETFIELD(average127, fieldname);
+        average127 = SETFIELD(average127, fieldname, oldValue/(average127.numTransfers-average127.numDisconnected));
+    end
 end
 
+
+average2k.numTransfers = numTransfers2k;
 for ii=1:size(fieldnames(average2k),1)
     average_fieldnames = fieldnames(average2k);
     fieldname = average_fieldnames{ii};
-    oldValue = GETFIELD(average2k, fieldname);
-    average2k = SETFIELD(average2k, fieldname, oldValue/numTransfers2k);
+    if(~strcmp(fieldname, 'numDisconnected') && ~strcmp(fieldname, 'numTransfers'))
+        oldValue = GETFIELD(average2k, fieldname);
+        average2k = SETFIELD(average2k, fieldname, oldValue/(average2k.numTransfers-average2k.numDisconnected));
+    end
 end
 
 
