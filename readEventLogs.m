@@ -23,6 +23,7 @@ UHX1_RX_POWER = 24e-3*5;
 BIM2A_TX_POWER = 14e-3*3 + 17e-3*3;
 BIM2A_RX_POWER = 17e-3*3;
 
+MAX_NUMBER_OF_RETRANSMITS=8;
 TX_ENABLED=2;
 RX_ENABLED=3;
 EXIT=5;
@@ -109,6 +110,7 @@ for fileIndex=1:length(extractedFiles)
         'numOfIdealTx', 0,                      ...
         'numOfTx', 0,                           ...
         'numOfRx', 0,                           ...
+        'consecutiveRetransmits', 0,            ...
         'numOfRetransmit', 0,                   ...
         'txTime', 0,                            ...
         'rxTime', 0,                            ...
@@ -191,6 +193,7 @@ for fileIndex=1:length(extractedFiles)
             transfer.numOfRetransmit = 0;
             transfer.txTime = 0;
             transfer.power = [transfer.times(1), 0];
+            transfer.consecutiveRetransmits = 0;
             for jj=1:length(transfer.events)
                 if(transfer.events(jj) == TX_ENABLED)
                     transfer.numOfTx = transfer.numOfTx + 1;
@@ -210,12 +213,18 @@ for fileIndex=1:length(extractedFiles)
 
                 elseif(transfer.events(jj) == RETRANSMIT)
                     transfer.numOfRetransmit = transfer.numOfRetransmit + 1;
+                    if (transfer.events(jj-3) == RETRANSMIT)
+                        transfer.consecutiveRetransmits = transfer.consecutiveRetransmits + 1;
+                    else
+                        transfer.consecutiveRetransmits = 0;
+                    end
+%                     fprintf('Number of consecutive retransmmits = %d\n', transfer.consecutiveRetransmits);
                 end
 
             end
             transfer.rxTime = transfer.transferTime - transfer.txTime;
             
-            if transfer.numOfIdealTx <= transfer.numOfTx
+            if transfer.consecutiveRetransmits < MAX_NUMBER_OF_RETRANSMITS
 
                 % error rate
                 transfer.errorRate = transfer.numOfRetransmit/transfer.numOfTx;
@@ -258,6 +267,7 @@ for fileIndex=1:length(extractedFiles)
                 transfers(transferIndex) = transfer;
                 transferIndex = transferIndex + 1;
             else
+                fprintf('EXIT: Number of consecutive retransmmits = %d\n', transfer.consecutiveRetransmits);
                 % increment disconnected
                 if transfer.fileSize == 127
                     average127.numDisconnected = average127.numDisconnected + 1;
@@ -331,7 +341,6 @@ for ii=1:size(fieldnames(average2k),1)
         average2k = SETFIELD(average2k, fieldname, oldValue/(average2k.numTransfers-average2k.numDisconnected));
     end
 end
-
 
 
 
