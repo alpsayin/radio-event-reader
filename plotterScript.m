@@ -41,19 +41,22 @@ for variable_index = 1:length(variables)
     for ii=1:length(plot_list)
         fieldname = plot_list{ii};
         index = 1;
+        skip = 0;
         for jj=1:length(distances)
             if  jj<=length(data_struct) && ~isempty(data_struct{jj})
                 value = getfield(data_struct{jj}, fieldname);
                 if isnan(value)
-                    value = -max(ydata{ii});
+                    value = -1;
                 end
             else
-                value = -max(ydata{ii});
+                value = -1;
             end
             if value>= 0
                 ydata{ ii}(index) = value;
-                xdata{ ii}(index) = distances(index);
+                xdata{ ii}(index) = distances(index+skip);
                 index = index + 1;
+            else
+                skip = skip + 1;
             end
         end
     end
